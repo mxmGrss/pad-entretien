@@ -6,6 +6,7 @@
 <title>Pad d'entretien</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
 <style>
   :root { --bg:#16181d; --panel:#1f2229; --line:#333843; --fg:#e6e8ec; --dim:#9aa1ad; --accent:#4f9cf9; --ok:#4cc38a; }
   * { box-sizing: border-box; }
@@ -28,6 +29,10 @@
   #notes { flex: 1; resize: none; border: 0; padding: 12px; background: var(--bg); color: var(--fg); font: 13px/1.5 ui-monospace, Consolas, monospace; }
   #editor { flex: 1; min-height: 0; }
   .CodeMirror { height: 100%; font: 14px/1.5 ui-monospace, Consolas, monospace; }
+  .CodeMirror-hints { background: #2b303b; border-color: var(--line); font: 13px/1.5 ui-monospace, Consolas, monospace; z-index: 10; }
+  .CodeMirror-hint { color: var(--fg); }
+  li.CodeMirror-hint-active { background: var(--accent); color: #06121f; }
+  header label { color: var(--dim); display: flex; gap: 4px; align-items: center; }
   #out { flex: 1; margin: 0; padding: 12px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 13px/1.5 ui-monospace, Consolas, monospace; }
   @media (max-width: 700px) {
     main { grid-template-columns: 1fr; grid-template-rows: 25% 1fr 25%; }
@@ -40,6 +45,7 @@
   <h1>Pad d'entretien</h1>
   <span id="status" role="status" aria-live="polite">Connexion…</span>
   <span id="clock" aria-label="Chronomètre">00:00</span>
+  <label title="Décoche pour t'entraîner sans aide"><input type="checkbox" id="auto" checked> Auto-complétion</label>
   <button id="clockBtn" type="button">Démarrer le chrono</button>
   <button id="copy" type="button">Copier le lien</button>
   <button id="run" type="button" title="Ctrl+Entrée">▶ Exécuter</button>
@@ -61,6 +67,9 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <script>
 const $ = id => document.getElementById(id);
@@ -72,16 +81,52 @@ if (!room) room = Math.random().toString(36).slice(2, 8);
 history.replaceState(null, '', '#' + room);
 addEventListener('hashchange', () => location.reload());   // lien d'une autre salle collé dans le même onglet
 
+// --- Auto-complétion : mots-clés Python + mots déjà présents dans le code ----
+// ponytail: complétion par préfixe, sans analyse de types. Pour mieux, brancher jedi via Pyodide.
+const PY_WORDS = ('False None True and as assert break class continue def del elif else except finally for from global ' +
+  'if import in is lambda nonlocal not or pass raise return try while with yield ' +
+  'abs all any bool dict enumerate filter float input int isinstance len list map max min print range reversed ' +
+  'round set sorted str sum tuple type zip ValueError KeyError IndexError TypeError Exception ' +
+  'append extend insert remove pop popleft appendleft clear index count sort reverse copy ' +
+  'items keys values get setdefault update add discard join split strip startswith endswith replace lower upper format ' +
+  'collections Counter defaultdict deque most_common heapq heappush heappop itertools functools math self __init__ __name__').split(' ');
+function pyHint(c) {
+  const cur = c.getCursor(), line = c.getLine(cur.line);
+  let s = cur.ch;
+  while (s && /\w/.test(line[s - 1])) s--;
+  const pre = line.slice(s, cur.ch);
+  if (pre.length < 2) return null;
+  const words = new Set(PY_WORDS);
+  (c.getValue().match(/[A-Za-z_]\w{2,}/g) || []).forEach(w => words.add(w));
+  const list = [...words].filter(w => w.startsWith(pre) && w !== pre).sort();
+  return list.length ? { list, from: CodeMirror.Pos(cur.line, s), to: cur } : null;
+}
+// Tab accepte la suggestion ; Entrée va toujours à la ligne (sinon "return total" + Entrée
+// choisirait "total_sum" à la place).
+const showHint = c => c.showHint({ hint: pyHint, completeSingle: false,
+  extraKeys: { Enter: (cm, h) => { h.close(); cm.execCommand('newlineAndIndent'); } } });
+
 // --- Éditeur -----------------------------------------------------------------
 const cm = CodeMirror($('editor'), {
   mode: 'python', theme: 'material-darker', lineNumbers: true, indentUnit: 4,
+  autoCloseBrackets: true, matchBrackets: true,
   extraKeys: {
+    'Ctrl-Space': showHint,
+    Backspace: c => {                    // en début de ligne, efface un niveau d'indentation entier
+      const p = c.getCursor(), before = c.getLine(p.line).slice(0, p.ch);
+      if (c.somethingSelected() || !before || before.trim() || p.ch % 4) return CodeMirror.Pass;
+      c.indentSelection('subtract');
+    },
     Tab: c => c.somethingSelected() ? c.indentSelection('add') : c.replaceSelection('    '),
     'Shift-Tab': c => c.indentSelection('subtract'),
     'Ctrl-Enter': run, 'Cmd-Enter': run,
   },
 });
 const notes = $('notes');
+$('auto').addEventListener('change', e => cm.setOption('autoCloseBrackets', e.target.checked));
+cm.on('inputRead', (c, ch) => {
+  if ($('auto').checked && ch.origin === '+input' && /\w/.test(ch.text[0])) showHint(c);
+});
 
 // Sauvegarde locale : un rechargement de page ne perd pas le travail.
 const KEY = 'pad:' + room;
