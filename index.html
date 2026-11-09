@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pad d'entretien</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<style>
+  :root { --bg:#16181d; --panel:#1f2229; --line:#333843; --fg:#e6e8ec; --dim:#9aa1ad; --accent:#4f9cf9; --ok:#4cc38a; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; display: flex; flex-direction: column; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0; }
+  #status { color: var(--dim); flex: 1; min-width: 12ch; }
+  #status.ok { color: var(--ok); }
+  button { font: inherit; color: var(--fg); background: #2b303b; border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button:disabled { opacity: .5; cursor: wait; }
+  #run { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 30%) 1fr; grid-template-rows: 1fr 30%; }
+  section { display: flex; flex-direction: column; min-height: 0; min-width: 0; border: 0 solid var(--line); }
+  #p-notes { grid-row: 1 / 3; border-right-width: 1px; }
+  #p-out { border-top-width: 1px; }
+  section > label, section > h2 { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); padding: 6px 12px; margin: 0; background: var(--panel); }
+  #notes { flex: 1; resize: none; border: 0; padding: 12px; background: var(--bg); color: var(--fg); font: 13px/1.5 ui-monospace, Consolas, monospace; }
+  #editor { flex: 1; min-height: 0; }
+  .CodeMirror { height: 100%; font: 14px/1.5 ui-monospace, Consolas, monospace; }
+  #out { flex: 1; margin: 0; padding: 12px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+  @media (max-width: 700px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 25% 1fr 25%; }
+    #p-notes { grid-row: auto; border-right-width: 0; border-bottom-width: 1px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pad d'entretien</h1>
+  <span id="status" role="status" aria-live="polite">Connexion…</span>
+  <span id="clock" aria-label="Chronomètre">00:00</span>
+  <button id="clockBtn" type="button">Démarrer le chrono</button>
+  <button id="copy" type="button">Copier le lien</button>
+  <button id="run" type="button" title="Ctrl+Entrée">▶ Exécuter</button>
+</header>
+<main>
+  <section id="p-notes">
+    <label for="notes">Sujet et notes (partagé)</label>
+    <textarea id="notes" spellcheck="false" placeholder="Colle le sujet ici. Tout le monde le voit."></textarea>
+  </section>
+  <section id="p-code">
+    <h2>Code Python (partagé)</h2>
+    <div id="editor"></div>
+  </section>
+  <section id="p-out">
+    <h2>Sortie (partagée)</h2>
+    <pre id="out" aria-live="polite" tabindex="0">Clique sur Exécuter ou fais Ctrl+Entrée.</pre>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const PREFIX = 'pad-entretien-';
+
+// --- Salle : l'identifiant est dans le #hash de l'URL -----------------------
+let room = location.hash.slice(1).replace(/[^a-z0-9-]/gi, '');
+if (!room) room = Math.random().toString(36).slice(2, 8);
+history.replaceState(null, '', '#' + room);
+addEventListener('hashchange', () => location.reload());   // lien d'une autre salle collé dans le même onglet
+
+// --- Éditeur -----------------------------------------------------------------
+const cm = CodeMirror($('editor'), {
+  mode: 'python', theme: 'material-darker', lineNumbers: true, indentUnit: 4,
+  extraKeys: {
+    Tab: c => c.somethingSelected() ? c.indentSelection('add') : c.replaceSelection('    '),
+    'Shift-Tab': c => c.indentSelection('subtract'),
+    'Ctrl-Enter': run, 'Cmd-Enter': run,
+  },
+});
+const notes = $('notes');
+
+// Sauvegarde locale : un rechargement de page ne perd pas le travail.
+const KEY = 'pad:' + room;
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify({ code: cm.getValue(), notes: notes.value })); } catch {}
+}
+try {
+  const s = JSON.parse(localStorage.getItem(KEY) || 'null');
+  cm.setValue(s?.code ?? '# Écris ton code ici\nprint("hello")\n');
+  notes.value = s?.notes ?? '';
+} catch { cm.setValue(''); }
+
+// --- Synchronisation ---------------------------------------------------------
+// ponytail: l'hôte fait autorité, avec un numéro de version. Si deux personnes
+// tapent exactement en même temps, la frappe de l'invité est annulée (resync).
+// Pour de l'édition simultanée fine, passer à un CRDT (Yjs).
+let isHost = false, conns = [], hostConn = null, ver = 0, rej = 0;
+
+const snapshot = extra => ({ t: 'state', code: cm.getValue(), notes: notes.value, ver, ...extra });
+
+function sendAll(msg, except) {
+  if (isHost) conns.forEach(c => c !== except && c.open && c.send(msg));
+  else if (hostConn?.open) hostConn.send(msg);
+}
+
+// Remplace seulement la partie du texte qui diffère, pour ne pas déplacer le curseur local.
+function applyCode(text) {
+  const cur = cm.getValue();
+  if (cur === text) return;
+  let s = 0, e = 0;
+  while (s < cur.length && s < text.length && cur[s] === text[s]) s++;
+  while (e < cur.length - s && e < text.length - s && cur[cur.length - 1 - e] === text[text.length - 1 - e]) e++;
+  cm.replaceRange(text.slice(s, text.length - e), cm.posFromIndex(s), cm.posFromIndex(cur.length - e), 'remote');
+}
+
+function applyState(m) {
+  if (typeof m.code !== 'string' || typeof m.notes !== 'string') return;
+  applyCode(m.code);
+  if (notes.value !== m.notes) {
+    const a = notes.selectionStart, b = notes.selectionEnd;
+    notes.value = m.notes;
+    notes.setSelectionRange(a, b);
+  }
+  save();
+}
+
+function localEdit() {
+  save();
+  if (isHost) { ver++; sendAll(snapshot()); }
+  else if (hostConn?.open) { hostConn.send({ t: 'edit', code: cm.getValue(), notes: notes.value, base: ver, rej }); ver++; }
+}
+cm.on('change', (_, ch) => { if (ch.origin !== 'remote' && ch.origin !== 'setValue') localEdit(); });
+notes.addEventListener('input', localEdit);
+
+function hostData(c, m) {
+  if (m?.t === 'edit') {
+    if (m.base !== ver || m.rej !== c.rej) { c.rej++; c.send(snapshot({ resync: true })); return; }
+    applyState(m); ver++;
+    sendAll(snapshot(), c);
+  } else if (m?.t === 'out' || m?.t === 'clock') { handleShared(m); sendAll(m, c); }
+}
+function guestData(m) {
+  if (m?.t === 'state') { applyState(m); ver = m.ver; if (m.resync) rej++; if ('clock' in m) setClock(m.clock); }
+  else if (m?.t === 'out' || m?.t === 'clock') handleShared(m);
+}
+function handleShared(m) {
+  if (m.t === 'out') $('out').textContent = String(m.text);
+  else setClock(m.start);
+}
+
+// --- Connexion pair à pair (PeerJS, sans serveur à nous) --------------------
+function setStatus(text, ok) { $('status').textContent = text; $('status').classList.toggle('ok', !!ok); }
+function hostStatus() {
+  setStatus(conns.length ? `Connecté (${conns.length + 1} personnes)` : "En attente de l'autre personne. Envoie-lui le lien.", conns.length > 0);
+}
+
+function start() {                       // on essaie d'abord d'être l'hôte de la salle
+  setStatus('Connexion…');
+  const peer = new Peer(PREFIX + room);
+  peer.on('open', () => { isHost = true; conns = []; hostStatus(); });
+  peer.on('connection', c => {
+    c.rej = 0;
+    c.on('open', () => { conns.push(c); c.send(snapshot({ clock: clockStart })); hostStatus(); });
+    c.on('data', m => hostData(c, m));
+    c.on('close', () => { conns = conns.filter(x => x !== c); hostStatus(); });
+  });
+  peer.on('disconnected', () => peer.reconnect());
+  peer.on('error', err => {
+    if (err.type === 'unavailable-id') { peer.destroy(); join(); }   // salle déjà ouverte : on la rejoint
+    else setStatus('Erreur réseau (' + err.type + '). Recharge la page.');
+  });
+}
+
+function join() {
+  isHost = false;
+  const peer = new Peer();
+  const retry = () => { hostConn = null; peer.destroy(); setStatus('Reconnexion…'); setTimeout(start, 1500); };
+  peer.on('open', () => {
+    const c = peer.connect(PREFIX + room, { reliable: true });
+    hostConn = c; rej = 0;
+    c.on('open', () => setStatus('Connecté', true));
+    c.on('data', guestData);
+    c.on('close', retry);                // l'hôte est parti : on reprend la salle avec notre copie
+  });
+  peer.on('error', err => {
+    if (err.type === 'peer-unavailable') retry();
+    else setStatus('Erreur réseau (' + err.type + '). Recharge la page.');
+  });
+}
+start();
+
+// --- Exécution Python (Pyodide dans un Web Worker) ---------------------------
+const PYODIDE = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/';
+const workerSrc = `
+importScripts('${PYODIDE}pyodide.js');
+const ready = loadPyodide({ indexURL: '${PYODIDE}' });
+onmessage = async e => {
+  let out = '';
+  const w = s => { out += s + '\\n'; };
+  try {
+    const py = await ready;
+    py.setStdout({ batched: w }); py.setStderr({ batched: w });
+    await py.loadPackagesFromImports(e.data);
+    postMessage({ started: true });
+    const g = py.toPy({ __name__: '__main__' });
+    await py.runPythonAsync(e.data, { globals: g });
+  } catch (err) {
+    const m = String(err.message || err), i = m.indexOf('  File "<exec>"');
+    out += i >= 0 ? 'Traceback (most recent call last):\\n' + m.slice(i) : m;
+  }
+  postMessage({ out });
+};`;
+const TIMEOUT_MS = 10000;
+let worker, timer;
+function newWorker() {
+  worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: 'text/javascript' })));
+  worker.onmessage = e => {
+    if (e.data.started) {                // le chrono d'exécution démarre une fois Pyodide chargé
+      timer = setTimeout(() => { worker.terminate(); newWorker(); done('Arrêté après 10 s. Boucle infinie ?'); }, TIMEOUT_MS);
+      return;
+    }
+    clearTimeout(timer);
+    done(e.data.out || '(aucune sortie)');
+  };
+  worker.onerror = e => { clearTimeout(timer); newWorker(); done("Impossible de charger Python : " + (e.message || 'erreur réseau')); };
+}
+function done(text) {
+  $('run').disabled = false;
+  const m = { t: 'out', text };
+  handleShared(m); sendAll(m);
+}
+function run() {
+  if ($('run').disabled) return;
+  $('run').disabled = true;
+  $('out').textContent = 'Exécution… (le premier lancement charge Python, quelques secondes)';
+  worker.postMessage(cm.getValue());
+}
+newWorker();
+$('run').addEventListener('click', run);
+
+// --- Chronomètre partagé ------------------------------------------------------
+let clockStart = null;                   // horodatage de départ, ou null si arrêté
+function setClock(start) {
+  clockStart = typeof start === 'number' ? start : null;
+  $('clockBtn').textContent = clockStart ? 'Arrêter le chrono' : 'Démarrer le chrono';
+  tick();
+}
+function tick() {
+  const s = clockStart ? Math.max(0, Math.floor((Date.now() - clockStart) / 1000)) : 0;
+  $('clock').textContent = String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+setInterval(tick, 1000);
+$('clockBtn').addEventListener('click', () => {
+  setClock(clockStart ? null : Date.now());
+  sendAll({ t: 'clock', start: clockStart });
+});
+
+// --- Lien de partage -----------------------------------------------------------
+$('copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(location.href); $('copy').textContent = 'Lien copié'; }
+  catch { prompt('Copie ce lien :', location.href); }
+  setTimeout(() => { $('copy').textContent = 'Copier le lien'; }, 2000);
+});
+</script>
+</body>
+</html>
