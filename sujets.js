@@ -2,6 +2,7 @@
 const SUJETS = [
 {
   groupe: '1er tour', titre: 'Fenêtre glissante',
+  suites: ["Renvoie aussi la position de la meilleure fenêtre (indices de début et de fin).", "Les valeurs arrivent maintenant une par une, en flux, et on ne peut pas tout stocker.\nÉcris une classe avec push(x) qui renvoie la somme de la fenêtre courante\n(ou None tant que la fenêtre n'est pas pleine).", "Le flux tourne pendant des heures, avec des flottants. Y a-t-il un problème ?", "Nouvelle question : trouve la plus petite fenêtre dont la somme dépasse un seuil S.\nEst-ce que les valeurs négatives changent quelque chose ?"],
   notes: `EXERCICE : FENÊTRE GLISSANTE
 
 On reçoit un flux de mesures de capteur, sous forme d'une liste de nombres.
@@ -28,6 +29,7 @@ print(max_window_sums([1, 3, 2, 6, -1, 4, 1, 8, 2], 3))
 },
 {
   groupe: '1er tour', titre: 'Agrégateur de détections',
+  suites: ["On ignore les détections de confiance inférieure à 0.5.\nPour chaque capteur, je veux le label qu'il voit le plus souvent.", "Un même drone est vu par plusieurs capteurs en même temps, et on le compte plusieurs fois.\nDeux détections du même label à moins de 2 secondes d'écart forment un seul événement.\nCompte les événements par label.", "Les détections arrivent maintenant en flux.\nÉcris une classe avec add(det) et top_k(k), qui renvoie les k labels les plus fréquents\nsur les 60 dernières secondes."],
   notes: `EXERCICE : AGRÉGATEUR DE DÉTECTIONS
 
 Des capteurs (caméras, radars) envoient des détections :
@@ -117,6 +119,7 @@ print(count_by_label(dets))
 },
 {
   groupe: '1er tour', titre: 'Softmax et entropie croisée',
+  suites: ["Essaie softmax([1000, 1001, 1002]).", "Calcule cross_entropy([1000, 0], 1).", "Pour entraîner le modèle, j'ai besoin de la dérivée de la perte par rapport aux logits.\nQue vaut-elle ? Comment vérifier ton code ?"],
   notes: `EXERCICE : SOFTMAX ET ENTROPIE CROISÉE
 
 Un classifieur produit un vecteur de scores bruts (logits), un par classe.
@@ -150,6 +153,7 @@ print(cross_entropy([2.0, 1.0, 0.1], 0))
 },
 {
   groupe: 'Live coding', titre: 'A. Doublons de détection (NMS)',
+  suites: ["L'algorithme : on trie les boîtes par score décroissant. On prend la meilleure et on la garde.\nToutes les boîtes restantes qui la recouvrent avec un IoU supérieur à un seuil sont considérées\ncomme des doublons et supprimées. On recommence avec la meilleure boîte restante, jusqu'à ce\nqu'il n'en reste plus.\n\nReformule-le avec tes mots, puis implémente nms(boxes, scores, iou_thr).", "Les boîtes ont maintenant une classe (drone, oiseau...).\nUn drone et un oiseau superposés ne doivent pas se supprimer.", "Une image contient 10 000 boîtes. Mesure le temps, puis accélère.", "Deux objets réels se recouvrent beaucoup (une foule, un essaim).\nQue fait ton algorithme ? Que proposes-tu ?"],
   notes: `EXERCICE A : DOUBLONS DE DÉTECTION
 
 Un détecteur d'objets renvoie, pour une image, des boîtes (x1, y1, x2, y2)
@@ -179,6 +183,7 @@ print(iou((0, 0, 2, 2), (1, 1, 3, 3)))
 },
 {
   groupe: 'Live coding', titre: 'B. Cache',
+  suites: ["La mémoire est limitée : le cache garde au plus N entrées.\nQuand il est plein, on retire celle qui a été utilisée le moins récemment.\nÉcris une classe avec get(key) et put(key, value), toutes deux en O(1).", "Imagine que OrderedDict n'existe pas.", "Chaque entrée expire après T secondes.\nEt si plusieurs threads utilisent le cache en même temps ?"],
   notes: `EXERCICE B : CACHE
 
 Un service appelle souvent une fonction coûteuse (par exemple une inférence
@@ -201,6 +206,7 @@ print(fib(25))
 },
 {
   groupe: 'Live coding', titre: 'C. Suivi de cibles',
+  suites: ["Le principe : chaque objet suivi s'appelle une piste ; elle a une dernière position connue.\nÀ chaque trame, on associe chaque détection à au plus une piste, et chaque piste à au plus\nune détection. On n'associe une détection à une piste que si elle est à moins d'une distance\nmaximale, appelée porte. On commence par les couples les plus proches. Ce qui reste sans\npartenaire est signalé : les détections libres deviendront de nouvelles pistes.\n\nReformule-le avec tes mots, puis implémente associate(tracks, detections, gate).", "Écris un Tracker avec une méthode step(detections).\nChaque piste a un identifiant stable. Une piste sans détection pendant plus de max_missed\ntrames consécutives est supprimée.", "5 000 pistes et 5 000 détections par trame, à 20 trames par seconde. Ça tient ?", "Les objets bougent vite et sortent de la porte d'une trame à l'autre. Que proposes-tu ?"],
   notes: `EXERCICE C : SUIVI DE CIBLES
 
 À chaque trame, un radar renvoie une liste de positions (x, y) détectées.
@@ -225,6 +231,7 @@ print(associate(tracks, detections, gate=3))
 },
 {
   groupe: 'AI Design', titre: 'Détection de drones',
+  suites: ["Contrainte : tout le calcul doit tenir sur une carte embarquée de 10 W.", "Contrainte : on n'a que 200 vidéos de drones étiquetées.", "Contrainte : l'opérateur doit comprendre pourquoi une alerte a été levée.", "Un nouveau modèle de drone apparaît, absent des données d'entraînement."],
   notes: `AI DESIGN : DÉTECTION DE DRONES
 
 Un site militaire veut être alerté quand un petit drone approche. On dispose
@@ -244,6 +251,7 @@ L'intervieweur ajoutera des contraintes en cours de route.
 },
 {
   groupe: 'AI Design', titre: 'Tri de rapports',
+  suites: ["Contrainte : les rapports arrivent en quatre langues.", "Une des sources envoie volontairement de fausses informations.", "Il faut pouvoir justifier devant un auditeur pourquoi un rapport a été écarté."],
   notes: `AI DESIGN : TRI DE RAPPORTS
 
 Des analystes reçoivent chaque jour 5 000 rapports textuels de sources
@@ -260,6 +268,7 @@ L'intervieweur ajoutera des contraintes en cours de route.
 },
 {
   groupe: 'AI Design', titre: 'Maintenance prédictive',
+  suites: ["L'historique ne contient que 12 pannes.", "Les véhicules viennent de trois séries différentes, avec des capteurs différents.", "Une immobilisation inutile coûte 5 000 €. Une panne en mission coûte bien plus. Qu'est-ce que ça change ?"],
   notes: `AI DESIGN : MAINTENANCE PRÉDICTIVE
 
 On a 300 véhicules équipés de capteurs (vibrations, températures, pression).
