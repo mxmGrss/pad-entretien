@@ -57,6 +57,10 @@
   dialog li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
   dialog .dim { color: var(--dim); font-size: 12px; }
   #pwErr { color: #f28b82; }
+  #tabSol[aria-selected=true] { color: var(--ok); border-color: var(--ok); }
+  .soltools { border-top-color: var(--ok); color: var(--ok); }
+  .soltools button[aria-pressed=true] { border-color: var(--ok); color: var(--ok); }
+  #ed-sol .cmwrap, #solGuideText { box-shadow: inset 3px 0 0 var(--ok); }
   .admintools { display: contents; }
   #nextStep { border-color: var(--ok); color: var(--ok); }
   #nextStep:disabled { cursor: default; }
@@ -93,6 +97,7 @@
     <div class="bar" role="tablist" aria-label="Éditeur">
       <button class="tab" id="tabShared" role="tab" aria-selected="true" aria-controls="ed-shared">Code partagé</button>
       <button class="tab" id="tabPriv" role="tab" aria-selected="false" aria-controls="ed-priv" hidden>Mon brouillon privé</button>
+      <button class="tab" id="tabSol" role="tab" aria-selected="false" aria-controls="ed-sol" hidden>Solution</button>
     </div>
     <div class="ed" id="ed-shared" role="tabpanel" aria-labelledby="tabShared"><div class="cmwrap" id="editor"></div></div>
     <div class="ed" id="ed-priv" role="tabpanel" aria-labelledby="tabPriv" hidden>
@@ -103,6 +108,17 @@
         <input type="file" id="file" accept=".py,.txt" hidden>
       </div>
       <div class="cmwrap" id="editor-priv"></div>
+    </div>
+    <div class="ed" id="ed-sol" role="tabpanel" aria-labelledby="tabSol" hidden>
+      <div class="privtools soltools">
+        <strong id="solTitle">Aucun sujet chargé.</strong>
+        <button type="button" id="solGuide" aria-pressed="true">Guide</button>
+        <button type="button" id="solCode" aria-pressed="false">Corrigé</button>
+        <button type="button" id="solToPriv">Copier le corrigé dans mon brouillon</button>
+        <span>Toi seul. Exécuter lance le corrigé en privé.</span>
+      </div>
+      <pre class="out" id="solGuideText"></pre>
+      <div class="cmwrap" id="editor-sol" hidden></div>
     </div>
   </section>
   <section id="p-out">
@@ -134,6 +150,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <script src="sujets.js"></script>
+<script src="solutions.enc.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const PREFIX = 'pad-entretien-';
@@ -197,6 +214,8 @@ function makeEditor(el, onRun) {
 }
 const cm = makeEditor($('editor'), () => shared.run(cm.getValue()));
 const cmP = makeEditor($('editor-priv'), () => priv.run(cmP.getValue()));
+const cmS = makeEditor($('editor-sol'), () => priv.run(cmS.getValue()));
+cmS.setOption('readOnly', true);
 const notes = $('notes');
 $('auto').addEventListener('change', e => [cm, cmP].forEach(ed => ed.setOption('autoCloseBrackets', e.target.checked)));
 
@@ -285,8 +304,7 @@ function handleShared(m) {
 // shortcut: le verrou admin est côté client. Il n'empêche pas un curieux muni des outils
 // de développement de s'accorder un brouillon ; il ne peut en revanche jamais lire celui
 // d'un autre, car un brouillon privé n'est jamais envoyé sur le réseau.
-const ADMIN_HASH = '5c51d63089ff14923e12c19ab96ad20737f6c2ccf1512afd74af7ff42fbc0310';
-let myName = store.get('pad:name') || '', isAdmin = store.get('pad:admin') === '1';
+let myName = store.get('pad:name') || '', isAdmin = false, SOL = null;
 let myId = null, roster = new Map(), rosterList = [];
 $('me').value = myName;
 
@@ -432,27 +450,60 @@ const shared = makeRunner($('out'), true);
 const priv = makeRunner($('out-priv'), false);
 shared.warm();
 
-// --- Onglets partagé / privé -----------------------------------------------------
-let activeTab = 'shared';
+// --- Onglets : partagé, brouillon privé, solution (admin) ---------------------------
+// Le brouillon et la solution s'exécutent dans l'interpréteur privé : leur sortie reste locale.
+let activeTab = 'shared', solView = 'guide';
+const TABS = { shared: ['tabShared', 'ed-shared'], priv: ['tabPriv', 'ed-priv'], sol: ['tabSol', 'ed-sol'] };
 function showTab(tab) {
   activeTab = tab;
-  const p = tab === 'priv';
-  $('tabShared').setAttribute('aria-selected', String(!p));
-  $('tabPriv').setAttribute('aria-selected', String(p));
-  $('ed-shared').hidden = p; $('ed-priv').hidden = !p;
+  for (const [t, [btn, panel]] of Object.entries(TABS)) {
+    $(btn).setAttribute('aria-selected', String(t === tab));
+    $(panel).hidden = t !== tab;
+  }
+  const p = tab !== 'shared';
   $('out').hidden = p; $('out-priv').hidden = !p;
   $('outLabel').textContent = p ? 'Sortie privée (toi seul)' : 'Sortie (partagée)';
   $('outLabel').htmlFor = p ? 'out-priv' : 'out';
   document.body.classList.toggle('priv', p);
-  (p ? cmP : cm).refresh();              // CodeMirror doit se remesurer après avoir été caché
-  (p ? cmP : cm).focus();
+  const ed = { shared: cm, priv: cmP, sol: cmS }[tab];
+  ed.refresh();                          // CodeMirror doit se remesurer après avoir été caché
+  if (tab !== 'sol') ed.focus();
   if (p) priv.warm();
   refreshRun();
 }
-function refreshRun() { $('run').disabled = (activeTab === 'priv' ? priv : shared).busy; }
+function refreshRun() { $('run').disabled = (activeTab === 'shared' ? shared : priv).busy; }
 $('tabShared').addEventListener('click', () => showTab('shared'));
 $('tabPriv').addEventListener('click', () => showTab('priv'));
-$('run').addEventListener('click', () => activeTab === 'priv' ? priv.run(cmP.getValue()) : shared.run(cm.getValue()));
+$('tabSol').addEventListener('click', () => showTab('sol'));
+$('run').addEventListener('click', () => {
+  if (activeTab === 'shared') shared.run(cm.getValue());
+  else priv.run((activeTab === 'sol' ? cmS : cmP).getValue());
+});
+
+function setSolView(v) {
+  solView = v;
+  $('solGuide').setAttribute('aria-pressed', String(v === 'guide'));
+  $('solCode').setAttribute('aria-pressed', String(v === 'code'));
+  $('solGuideText').hidden = v !== 'guide';
+  $('editor-sol').hidden = v !== 'code';
+  if (v === 'code') cmS.refresh();
+}
+// Affiche le guide et le corrigé du sujet chargé (cur vient de la section Sujets).
+function updateSolution() {
+  const s = typeof SUJETS !== 'undefined' && cur ? SUJETS[cur.i] : null;
+  const sol = s && SOL?.[s.titre];
+  $('solTitle').textContent = s ? s.titre : 'Aucun sujet chargé.';
+  let guide = sol?.guide || (s ? 'Pas de guide pour ce sujet.' : 'Charge un sujet pour voir son guide et son corrigé.');
+  if (SOL?.__questions && /^AI Design/.test(s?.groupe || '')) guide += '\n\n' + SOL.__questions.guide;
+  $('solGuideText').textContent = guide;
+  cmS.setValue(sol?.code || '# Pas de corrigé pour ce sujet.\n');
+  $('solCode').disabled = !sol?.code;
+  $('solToPriv').disabled = !sol?.code;
+  if (!sol?.code) setSolView('guide');
+}
+$('solGuide').addEventListener('click', () => setSolView('guide'));
+$('solCode').addEventListener('click', () => setSolView('code'));
+$('solToPriv').addEventListener('click', () => { replaceAll(cmP, cmS.getValue()); showTab('priv'); });
 $('copyShared').addEventListener('click', () => { replaceAll(cmP, cm.getValue()); cmP.focus(); });
 $('openFile').addEventListener('click', () => $('file').click());
 $('file').addEventListener('change', async e => {
@@ -462,9 +513,27 @@ $('file').addEventListener('change', async e => {
 });
 
 // --- Panneau admin -------------------------------------------------------------
-async function sha256(text) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+// Le mot de passe n'est stocké nulle part dans la page : il dérive (PBKDF2) la clé qui
+// déchiffre solutions.enc.js. Être admin = avoir réussi ce déchiffrement.
+const b64d = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const b64e = u8 => btoa(String.fromCharCode(...u8));
+async function deriveKey(pw) {
+  const E = SOLUTIONS_ENC;
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64d(E.salt), iterations: E.iter, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, true, ['decrypt']);
+}
+async function unlock(key) {             // lève une erreur si la clé est fausse (tag GCM invalide)
+  const E = SOLUTIONS_ENC;
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64d(E.iv) }, key, b64d(E.data));
+  SOL = JSON.parse(new TextDecoder().decode(plain));
+}
+function setAdmin(on) {
+  isAdmin = on;
+  if (!on) SOL = null;
+  $('tabSol').hidden = !on;
+  if (!on && activeTab === 'sol') showTab('shared');
+  updateSolution(); renderAdmin(); announce(); applyRoster(rosterList);
 }
 function renderAdmin() {
   $('pwForm').hidden = isAdmin;
@@ -497,16 +566,27 @@ function renderRoster() {
 $('adminBtn').addEventListener('click', () => { renderAdmin(); $('adminDlg').showModal(); (isAdmin ? $('adminBody') : $('pw')).focus?.(); });
 $('pwForm').addEventListener('submit', async e => {
   e.preventDefault();
-  if (await sha256($('pw').value) !== ADMIN_HASH) { $('pwErr').textContent = 'Mot de passe incorrect.'; return; }
+  $('pwErr').textContent = 'Vérification…';
+  try {
+    const key = await deriveKey($('pw').value);
+    await unlock(key);
+    // La clé dérivée (pas le mot de passe) est gardée dans ce navigateur pour éviter de le retaper.
+    store.set('pad:adminKey', b64e(new Uint8Array(await crypto.subtle.exportKey('raw', key))));
+  } catch { $('pwErr').textContent = 'Mot de passe incorrect.'; return; }
   $('pw').value = ''; $('pwErr').textContent = '';
-  isAdmin = true; store.set('pad:admin', '1');
-  renderAdmin(); announce(); applyRoster(rosterList);
+  setAdmin(true);
 });
-$('logout').addEventListener('click', () => {
-  isAdmin = false; store.set('pad:admin', '0');
-  renderAdmin(); announce(); applyRoster(rosterList);
-});
+$('logout').addEventListener('click', () => { store.set('pad:adminKey', ''); setAdmin(false); });
 renderAdmin();
+(async () => {                           // reprise de la session admin après un rechargement
+  const raw = store.get('pad:adminKey');
+  if (!raw || typeof SOLUTIONS_ENC === 'undefined') return;
+  try {
+    const key = await crypto.subtle.importKey('raw', b64d(raw), 'AES-GCM', false, ['decrypt']);
+    await unlock(key);
+    setAdmin(true);
+  } catch { store.set('pad:adminKey', ''); }   // solutions rechiffrées depuis : il faut retaper le mot de passe
+})();
 
 // --- Chronomètre partagé ------------------------------------------------------
 let clockStart = null;                   // horodatage de départ, ou null si arrêté
@@ -574,6 +654,7 @@ if (typeof SUJETS !== 'undefined') {
     cur = { i, step: 0 };
     store.set(SKEY, JSON.stringify(cur));
     refreshStep();
+    updateSolution();
   });
 }
 
