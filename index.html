@@ -8,8 +8,9 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
 <style>
-  :root { --bg:#16181d; --panel:#1f2229; --line:#333843; --fg:#e6e8ec; --dim:#9aa1ad; --accent:#4f9cf9; --ok:#4cc38a; }
+  :root { --bg:#16181d; --panel:#1f2229; --line:#333843; --fg:#e6e8ec; --dim:#9aa1ad; --accent:#4f9cf9; --ok:#4cc38a; --priv:#b48cf2; }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { height: 100%; margin: 0; }
   body { background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; display: flex; flex-direction: column; }
   header { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
@@ -18,16 +19,27 @@
   #status.ok { color: var(--ok); }
   button { font: inherit; color: var(--fg); background: #2b303b; border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
   button:hover:not(:disabled) { border-color: var(--accent); }
-  button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   button:disabled { opacity: .5; cursor: wait; }
   #run { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+  body.priv #run { background: var(--priv); border-color: var(--priv); }
+  input[type=text], input[type=password] { font: inherit; color: var(--fg); background: #2b303b; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+  #me { width: 9rem; }
   main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 30%) 1fr; grid-template-rows: 1fr 30%; }
   section { display: flex; flex-direction: column; min-height: 0; min-width: 0; border: 0 solid var(--line); }
   #p-notes { grid-row: 1 / 3; border-right-width: 1px; }
   #p-out { border-top-width: 1px; }
-  section > label, section > h2 { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); padding: 6px 12px; margin: 0; background: var(--panel); }
+  .bar, section > label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); padding: 6px 12px; margin: 0; background: var(--panel); }
+  .bar { display: flex; gap: 4px; align-items: center; padding: 3px 6px; }
+  .tab { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); background: none; border: 1px solid transparent; padding: 3px 8px; }
+  .tab[aria-selected=true] { color: var(--fg); border-color: var(--line); background: var(--bg); }
+  #tabPriv[aria-selected=true] { color: var(--priv); border-color: var(--priv); }
+  .privtools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 8px; background: var(--panel); border-top: 1px solid var(--priv); color: var(--priv); font-size: 12px; }
+  .privtools button { padding: 2px 8px; font-size: 12px; }
   #notes { flex: 1; resize: none; border: 0; padding: 12px; background: var(--bg); color: var(--fg); font: 13px/1.5 ui-monospace, Consolas, monospace; }
-  #editor { flex: 1; min-height: 0; }
+  .ed { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .ed > .cmwrap { flex: 1; min-height: 0; }
+  #ed-priv .cmwrap { box-shadow: inset 3px 0 0 var(--priv); }
   .CodeMirror { height: 100%; font: 14px/1.5 ui-monospace, Consolas, monospace; }
   .CodeMirror-hints { background: #2b303b; border-color: var(--line); font: 13px/1.5 ui-monospace, Consolas, monospace; z-index: 10; }
   .CodeMirror-hint { color: var(--fg); }
@@ -35,7 +47,16 @@
   header label { color: var(--dim); display: flex; gap: 4px; align-items: center; }
   select { font: inherit; color: var(--fg); background: #2b303b; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; max-width: 16rem; }
   select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  #out { flex: 1; margin: 0; padding: 12px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+  pre.out { flex: 1; margin: 0; padding: 12px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+  #out-priv { box-shadow: inset 3px 0 0 var(--priv); }
+  dialog { background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 16px; width: min(440px, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgba(0, 0, 0, .5); }
+  dialog h2 { font-size: 16px; margin: 0 0 12px; }
+  dialog form { display: flex; gap: 8px; flex-wrap: wrap; }
+  dialog ul { list-style: none; padding: 0; margin: 0 0 12px; }
+  dialog li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  dialog .dim { color: var(--dim); font-size: 12px; }
+  #pwErr { color: #f28b82; }
   @media (max-width: 700px) {
     main { grid-template-columns: 1fr; grid-template-rows: 25% 1fr 25%; }
     #p-notes { grid-row: auto; border-right-width: 0; border-bottom-width: 1px; }
@@ -46,11 +67,13 @@
 <header>
   <h1>Pad d'entretien</h1>
   <span id="status" role="status" aria-live="polite">Connexion…</span>
+  <input type="text" id="me" placeholder="Ton prénom" aria-label="Ton prénom" maxlength="24">
   <select id="sujet" aria-label="Charger un sujet"><option value="">Charger un sujet…</option></select>
   <span id="clock" aria-label="Chronomètre">00:00</span>
   <label title="Décoche pour t'entraîner sans aide"><input type="checkbox" id="auto" checked> Auto-complétion</label>
   <button id="clockBtn" type="button">Démarrer le chrono</button>
   <button id="copy" type="button">Copier le lien</button>
+  <button id="adminBtn" type="button">Admin</button>
   <button id="run" type="button" title="Ctrl+Entrée">▶ Exécuter</button>
 </header>
 <main>
@@ -59,14 +82,42 @@
     <textarea id="notes" spellcheck="false" placeholder="Colle le sujet ici. Tout le monde le voit."></textarea>
   </section>
   <section id="p-code">
-    <h2>Code Python (partagé)</h2>
-    <div id="editor"></div>
+    <div class="bar" role="tablist" aria-label="Éditeur">
+      <button class="tab" id="tabShared" role="tab" aria-selected="true" aria-controls="ed-shared">Code partagé</button>
+      <button class="tab" id="tabPriv" role="tab" aria-selected="false" aria-controls="ed-priv" hidden>Mon brouillon privé</button>
+    </div>
+    <div class="ed" id="ed-shared" role="tabpanel" aria-labelledby="tabShared"><div class="cmwrap" id="editor"></div></div>
+    <div class="ed" id="ed-priv" role="tabpanel" aria-labelledby="tabPriv" hidden>
+      <div class="privtools">
+        <span>Visible par toi seul, jamais envoyé.</span>
+        <button type="button" id="copyShared">Copier le code partagé ici</button>
+        <button type="button" id="openFile">Ouvrir un fichier .py</button>
+        <input type="file" id="file" accept=".py,.txt" hidden>
+      </div>
+      <div class="cmwrap" id="editor-priv"></div>
+    </div>
   </section>
   <section id="p-out">
-    <h2>Sortie (partagée)</h2>
-    <pre id="out" aria-live="polite" tabindex="0">Clique sur Exécuter ou fais Ctrl+Entrée.</pre>
+    <label id="outLabel" for="out">Sortie (partagée)</label>
+    <pre class="out" id="out" aria-live="polite" tabindex="0">Clique sur Exécuter ou fais Ctrl+Entrée.</pre>
+    <pre class="out" id="out-priv" aria-live="polite" tabindex="0" hidden>Sortie de ton brouillon privé.</pre>
   </section>
 </main>
+
+<dialog id="adminDlg" aria-labelledby="adminTitle">
+  <h2 id="adminTitle">Panneau admin</h2>
+  <form id="pwForm" method="dialog">
+    <input type="password" id="pw" placeholder="Mot de passe" aria-label="Mot de passe admin" autocomplete="off">
+    <button type="submit" value="login">Déverrouiller</button>
+    <span id="pwErr" role="alert"></span>
+  </form>
+  <div id="adminBody" hidden>
+    <p class="dim">Coche pour accorder un brouillon privé. Ton propre brouillon est toujours disponible.</p>
+    <ul id="roster"></ul>
+    <button type="button" id="logout">Quitter le mode admin</button>
+  </div>
+  <form method="dialog" style="margin-top:12px"><button>Fermer</button></form>
+</dialog>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
@@ -78,6 +129,10 @@
 <script>
 const $ = id => document.getElementById(id);
 const PREFIX = 'pad-entretien-';
+const store = {                          // localStorage peut être bloqué (navigation privée)
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
 
 // --- Salle : l'identifiant est dans le #hash de l'URL -----------------------
 let room = location.hash.slice(1).replace(/[^a-z0-9-]/gi, '');
@@ -110,38 +165,46 @@ function pyHint(c) {
 const showHint = c => c.showHint({ hint: pyHint, completeSingle: false,
   extraKeys: { Enter: (cm, h) => { h.close(); cm.execCommand('newlineAndIndent'); } } });
 
-// --- Éditeur -----------------------------------------------------------------
-const cm = CodeMirror($('editor'), {
-  mode: 'python', theme: 'material-darker', lineNumbers: true, indentUnit: 4,
-  autoCloseBrackets: true, matchBrackets: true,
-  extraKeys: {
-    'Ctrl-Space': showHint,
-    Backspace: c => {                    // en début de ligne, efface un niveau d'indentation entier
-      const p = c.getCursor(), before = c.getLine(p.line).slice(0, p.ch);
-      if (c.somethingSelected() || !before || before.trim() || p.ch % 4) return CodeMirror.Pass;
-      c.indentSelection('subtract');
+// --- Éditeurs : le partagé et le brouillon privé ont les mêmes réglages --------
+function makeEditor(el, onRun) {
+  const ed = CodeMirror(el, {
+    mode: 'python', theme: 'material-darker', lineNumbers: true, indentUnit: 4,
+    autoCloseBrackets: true, matchBrackets: true,
+    extraKeys: {
+      'Ctrl-Space': showHint,
+      Backspace: c => {                  // en début de ligne, efface un niveau d'indentation entier
+        const p = c.getCursor(), before = c.getLine(p.line).slice(0, p.ch);
+        if (c.somethingSelected() || !before || before.trim() || p.ch % 4) return CodeMirror.Pass;
+        c.indentSelection('subtract');
+      },
+      Tab: c => c.somethingSelected() ? c.indentSelection('add') : c.replaceSelection('    '),
+      'Shift-Tab': c => c.indentSelection('subtract'),
+      'Ctrl-Enter': onRun, 'Cmd-Enter': onRun,
     },
-    Tab: c => c.somethingSelected() ? c.indentSelection('add') : c.replaceSelection('    '),
-    'Shift-Tab': c => c.indentSelection('subtract'),
-    'Ctrl-Enter': run, 'Cmd-Enter': run,
-  },
-});
+  });
+  ed.on('inputRead', (c, ch) => {
+    if ($('auto').checked && ch.origin === '+input' && /\w/.test(ch.text[0])) showHint(c);
+  });
+  return ed;
+}
+const cm = makeEditor($('editor'), () => shared.run(cm.getValue()));
+const cmP = makeEditor($('editor-priv'), () => priv.run(cmP.getValue()));
 const notes = $('notes');
-$('auto').addEventListener('change', e => cm.setOption('autoCloseBrackets', e.target.checked));
-cm.on('inputRead', (c, ch) => {
-  if ($('auto').checked && ch.origin === '+input' && /\w/.test(ch.text[0])) showHint(c);
-});
+$('auto').addEventListener('change', e => [cm, cmP].forEach(ed => ed.setOption('autoCloseBrackets', e.target.checked)));
+
+// Remplace tout le contenu en gardant l'historique (Ctrl+Z annule le remplacement).
+function replaceAll(ed, text) { ed.operation(() => { ed.execCommand('selectAll'); ed.replaceSelection(text); }); }
 
 // Sauvegarde locale : un rechargement de page ne perd pas le travail.
 const KEY = 'pad:' + room;
-function save() {
-  try { localStorage.setItem(KEY, JSON.stringify({ code: cm.getValue(), notes: notes.value })); } catch {}
-}
+function save() { store.set(KEY, JSON.stringify({ code: cm.getValue(), notes: notes.value })); }
 try {
-  const s = JSON.parse(localStorage.getItem(KEY) || 'null');
+  const s = JSON.parse(store.get(KEY) || 'null');
   cm.setValue(s?.code ?? '# Écris ton code ici\nprint("hello")\n');
   notes.value = s?.notes ?? '';
 } catch { cm.setValue(''); }
+cmP.setValue(store.get('pad:prive') ?? '# Brouillon privé : rien de ce que tu tapes ici ne quitte ton navigateur.\n');
+cmP.on('change', () => store.set('pad:prive', cmP.getValue()));
 
 // --- Synchronisation ---------------------------------------------------------
 // ponytail: l'hôte fait autorité, avec un numéro de version. Si deux personnes
@@ -191,15 +254,56 @@ function hostData(c, m) {
     applyState(m); ver++;
     sendAll(snapshot(), c);
   } else if (m?.t === 'out' || m?.t === 'clock') { handleShared(m); sendAll(m, c); }
+  else if (m?.t === 'hello') {
+    const r = roster.get(c.peer);
+    if (r) { r.name = String(m.name || '').slice(0, 24); r.admin = !!m.admin; broadcastRoster(); }
+  } else if (m?.t === 'grant' && roster.get(c.peer)?.admin) setGrant(m.id, m.allowed);
 }
 function guestData(m) {
   if (m?.t === 'state') { applyState(m); ver = m.ver; if (m.resync) rej++; if ('clock' in m) setClock(m.clock); }
   else if (m?.t === 'out' || m?.t === 'clock') handleShared(m);
+  else if (m?.t === 'roster' && Array.isArray(m.list)) applyRoster(m.list);
 }
 function handleShared(m) {
   if (m.t === 'out') $('out').textContent = String(m.text);
   else setClock(m.start);
 }
+
+// --- Participants et droits (tenus par l'hôte) ---------------------------------
+// shortcut: le verrou admin est côté client. Il n'empêche pas un curieux muni des outils
+// de développement de s'accorder un brouillon ; il ne peut en revanche jamais lire celui
+// d'un autre, car un brouillon privé n'est jamais envoyé sur le réseau.
+const ADMIN_HASH = '5c51d63089ff14923e12c19ab96ad20737f6c2ccf1512afd74af7ff42fbc0310';
+let myName = store.get('pad:name') || '', isAdmin = store.get('pad:admin') === '1';
+let myId = null, roster = new Map(), rosterList = [];
+$('me').value = myName;
+
+function broadcastRoster() {
+  const list = [...roster].map(([id, r]) => ({ id, ...r }));
+  sendAll({ t: 'roster', list });
+  applyRoster(list);
+}
+function setGrant(id, allowed) {
+  const r = roster.get(id);
+  if (r) { r.allowed = !!allowed; broadcastRoster(); }
+}
+function announce() {                    // l'hôte met à jour sa propre ligne, l'invité prévient l'hôte
+  if (isHost) { const r = roster.get('host'); if (r) { r.name = myName; r.admin = isAdmin; broadcastRoster(); } }
+  else if (hostConn?.open) hostConn.send({ t: 'hello', name: myName, admin: isAdmin });
+}
+function applyRoster(list) {
+  rosterList = list;
+  const allowed = isAdmin || !!list.find(r => r.id === myId)?.allowed;
+  $('tabPriv').hidden = !allowed;
+  if (!allowed && activeTab === 'priv') showTab('shared');
+  renderRoster();
+}
+
+$('me').addEventListener('change', () => {
+  myName = $('me').value.trim();
+  store.set('pad:name', myName);
+  announce();
+});
 
 // --- Connexion pair à pair (PeerJS, sans serveur à nous) --------------------
 function setStatus(text, ok) { $('status').textContent = text; $('status').classList.toggle('ok', !!ok); }
@@ -210,16 +314,25 @@ function hostStatus() {
 function start() {                       // on essaie d'abord d'être l'hôte de la salle
   setStatus('Connexion…');
   const peer = new Peer(PREFIX + room);
-  peer.on('open', () => { isHost = true; conns = []; hostStatus(); });
+  peer.on('open', () => {
+    isHost = true; conns = []; myId = 'host';
+    roster = new Map([['host', { name: myName, allowed: false, admin: isAdmin }]]);
+    hostStatus(); broadcastRoster();
+  });
   peer.on('connection', c => {
     c.rej = 0;
-    c.on('open', () => { conns.push(c); c.send(snapshot({ clock: clockStart })); hostStatus(); });
+    c.on('open', () => {
+      conns.push(c);
+      roster.set(c.peer, { name: '', allowed: false, admin: false });
+      c.send(snapshot({ clock: clockStart }));
+      hostStatus(); broadcastRoster();
+    });
     c.on('data', m => hostData(c, m));
-    c.on('close', () => { conns = conns.filter(x => x !== c); hostStatus(); });
+    c.on('close', () => { conns = conns.filter(x => x !== c); roster.delete(c.peer); hostStatus(); broadcastRoster(); });
   });
-  peer.on('disconnected', () => peer.reconnect());
+  peer.on('disconnected', () => { if (!peer.gone) peer.reconnect(); });   // destroy() émet aussi 'disconnected'
   peer.on('error', err => {
-    if (err.type === 'unavailable-id') { peer.destroy(); join(); }   // salle déjà ouverte : on la rejoint
+    if (err.type === 'unavailable-id') { peer.gone = true; peer.destroy(); join(); }   // salle déjà ouverte : on la rejoint
     else setStatus('Erreur réseau (' + err.type + '). Recharge la page.');
   });
 }
@@ -228,10 +341,11 @@ function join() {
   isHost = false;
   const peer = new Peer();
   const retry = () => { hostConn = null; peer.destroy(); setStatus('Reconnexion…'); setTimeout(start, 1500); };
-  peer.on('open', () => {
+  peer.on('open', id => {
+    myId = id;
     const c = peer.connect(PREFIX + room, { reliable: true });
     hostConn = c; rej = 0;
-    c.on('open', () => setStatus('Connecté', true));
+    c.on('open', () => { setStatus('Connecté', true); announce(); });
     c.on('data', guestData);
     c.on('close', retry);                // l'hôte est parti : on reprend la salle avec notre copie
   });
@@ -240,7 +354,6 @@ function join() {
     else setStatus('Erreur réseau (' + err.type + '). Recharge la page.');
   });
 }
-start();
 
 // --- Exécution Python (Pyodide dans un Web Worker) ---------------------------
 const PYODIDE = 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/';
@@ -265,35 +378,122 @@ onmessage = async e => {
   }
   postMessage({ out, ms });
 };`;
+const workerURL = URL.createObjectURL(new Blob([workerSrc], { type: 'text/javascript' }));
 const TIMEOUT_MS = 10000;
-let worker, timer;
-function newWorker() {
-  worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: 'text/javascript' })));
-  worker.onmessage = e => {
-    if (e.data.started) {                // le chrono d'exécution démarre une fois Pyodide chargé
-      timer = setTimeout(() => { worker.terminate(); newWorker(); done('Arrêté après 10 s. Boucle infinie ?'); }, TIMEOUT_MS);
-      return;
-    }
-    clearTimeout(timer);
-    const ms = e.data.ms;
-    done((e.data.out || '(aucune sortie)\n') +
-      (ms == null ? '' : '\n[terminé en ' + (ms < 10 ? ms.toFixed(2) : Math.round(ms)) + ' ms]'));
+
+// Un interpréteur par éditeur : le brouillon privé tourne dans le sien, et sa sortie
+// reste locale. Le second n'est créé qu'au premier lancement privé.
+function makeRunner(outEl, publish) {
+  let worker = null, timer, busy = false;
+  const finish = text => {
+    busy = false; refreshRun();
+    if (publish) { const m = { t: 'out', text }; handleShared(m); sendAll(m); }
+    else outEl.textContent = text;
   };
-  worker.onerror = e => { clearTimeout(timer); newWorker(); done("Impossible de charger Python : " + (e.message || 'erreur réseau')); };
+  const spawn = () => {
+    worker = new Worker(workerURL);
+    worker.onmessage = e => {
+      if (e.data.started) {              // le délai d'exécution démarre une fois Pyodide chargé
+        timer = setTimeout(() => { worker.terminate(); spawn(); finish('Arrêté après 10 s. Boucle infinie ?'); }, TIMEOUT_MS);
+        return;
+      }
+      clearTimeout(timer);
+      const ms = e.data.ms;
+      finish((e.data.out || '(aucune sortie)\n') +
+        (ms == null ? '' : '\n[terminé en ' + (ms < 10 ? ms.toFixed(2) : Math.round(ms)) + ' ms]'));
+    };
+    worker.onerror = e => { clearTimeout(timer); spawn(); finish('Impossible de charger Python : ' + (e.message || 'erreur réseau')); };
+  };
+  return {
+    get busy() { return busy; },
+    warm() { if (!worker) spawn(); },
+    run(code) {
+      if (busy) return;
+      if (!worker) spawn();
+      busy = true; refreshRun();
+      outEl.textContent = 'Exécution… (le premier lancement charge Python, quelques secondes)';
+      worker.postMessage(code);
+    },
+  };
 }
-function done(text) {
-  $('run').disabled = false;
-  const m = { t: 'out', text };
-  handleShared(m); sendAll(m);
+const shared = makeRunner($('out'), true);
+const priv = makeRunner($('out-priv'), false);
+shared.warm();
+
+// --- Onglets partagé / privé -----------------------------------------------------
+let activeTab = 'shared';
+function showTab(tab) {
+  activeTab = tab;
+  const p = tab === 'priv';
+  $('tabShared').setAttribute('aria-selected', String(!p));
+  $('tabPriv').setAttribute('aria-selected', String(p));
+  $('ed-shared').hidden = p; $('ed-priv').hidden = !p;
+  $('out').hidden = p; $('out-priv').hidden = !p;
+  $('outLabel').textContent = p ? 'Sortie privée (toi seul)' : 'Sortie (partagée)';
+  $('outLabel').htmlFor = p ? 'out-priv' : 'out';
+  document.body.classList.toggle('priv', p);
+  (p ? cmP : cm).refresh();              // CodeMirror doit se remesurer après avoir été caché
+  (p ? cmP : cm).focus();
+  if (p) priv.warm();
+  refreshRun();
 }
-function run() {
-  if ($('run').disabled) return;
-  $('run').disabled = true;
-  $('out').textContent = 'Exécution… (le premier lancement charge Python, quelques secondes)';
-  worker.postMessage(cm.getValue());
+function refreshRun() { $('run').disabled = (activeTab === 'priv' ? priv : shared).busy; }
+$('tabShared').addEventListener('click', () => showTab('shared'));
+$('tabPriv').addEventListener('click', () => showTab('priv'));
+$('run').addEventListener('click', () => activeTab === 'priv' ? priv.run(cmP.getValue()) : shared.run(cm.getValue()));
+$('copyShared').addEventListener('click', () => { replaceAll(cmP, cm.getValue()); cmP.focus(); });
+$('openFile').addEventListener('click', () => $('file').click());
+$('file').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  if (f) { replaceAll(cmP, await f.text()); cmP.focus(); }
+  e.target.value = '';                   // permet de rouvrir le même fichier
+});
+
+// --- Panneau admin -------------------------------------------------------------
+async function sha256(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
-newWorker();
-$('run').addEventListener('click', run);
+function renderAdmin() {
+  $('pwForm').hidden = isAdmin;
+  $('adminBody').hidden = !isAdmin;
+  $('adminBtn').textContent = isAdmin ? 'Admin ✓' : 'Admin';
+  renderRoster();
+}
+function renderRoster() {
+  if (!isAdmin) return;
+  const ul = $('roster');
+  ul.replaceChildren();
+  if (!rosterList.length) { ul.append(Object.assign(document.createElement('li'), { textContent: 'Personne pour le moment.' })); return; }
+  for (const r of rosterList) {
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    const tags = [r.id === myId && 'toi', r.id === 'host' && 'hôte', r.admin && 'admin'].filter(Boolean);
+    who.textContent = (r.name || 'Sans nom') + (tags.length ? ' (' + tags.join(', ') + ')' : '');
+    const lab = document.createElement('label');
+    const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: r.allowed || r.admin, disabled: r.admin });
+    box.addEventListener('change', () => {
+      if (isHost) setGrant(r.id, box.checked);
+      else hostConn?.open && hostConn.send({ t: 'grant', id: r.id, allowed: box.checked });
+    });
+    lab.append(box, ' Brouillon privé');
+    li.append(who, lab);
+    ul.append(li);
+  }
+}
+$('adminBtn').addEventListener('click', () => { renderAdmin(); $('adminDlg').showModal(); (isAdmin ? $('adminBody') : $('pw')).focus?.(); });
+$('pwForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (await sha256($('pw').value) !== ADMIN_HASH) { $('pwErr').textContent = 'Mot de passe incorrect.'; return; }
+  $('pw').value = ''; $('pwErr').textContent = '';
+  isAdmin = true; store.set('pad:admin', '1');
+  renderAdmin(); announce(); applyRoster(rosterList);
+});
+$('logout').addEventListener('click', () => {
+  isAdmin = false; store.set('pad:admin', '0');
+  renderAdmin(); announce(); applyRoster(rosterList);
+});
+renderAdmin();
 
 // --- Chronomètre partagé ------------------------------------------------------
 let clockStart = null;                   // horodatage de départ, ou null si arrêté
@@ -340,6 +540,8 @@ $('copy').addEventListener('click', async () => {
   catch { prompt('Copie ce lien :', location.href); }
   setTimeout(() => { $('copy').textContent = 'Copier le lien'; }, 2000);
 });
+
+start();
 </script>
 </body>
 </html>
